@@ -7,11 +7,11 @@
 // composer; a press writes that prompt into the real composer as the person's
 // draft ($.prompt.fill) for them to edit and Enter; 0 dismisses. The top
 // suggestion is also offered as the composer's dim Tab-to-take ghost text
-// ($.prompt.suggest). Only /auto (off at every session start) submits anything.
+// ($.prompt.suggest). Nothing is ever sent for the person.
 // The fork is also handed the session's skills and slash commands
 // ($.command.list), so a suggestion can be "/skill arguments".
 
-import type { CommandInfo, EngineInterface, Register, RenderElement, Timer } from 'claude-code'
+import type { CommandInfo, EngineInterface, Register, RenderElement } from 'claude-code'
 
 type Suggestion = { label: string; prompt: string }
 
@@ -147,120 +147,12 @@ function show($: EngineInterface, nextView: View): void {
   $.ui.invalidate('ui.render')
 }
 
-// Auto mode (/auto): a countdown sends suggestion 1 as the person's prompt, at
-// most AUTO_CAP turns in a row. Pressing 0 stops the countdown; a prompt the
-// person sends themselves resets the run. A hot reload turns auto mode off.
-const AUTO_CAP = 10
-const AUTO_SECONDS = 10
-let auto = false
-// false: suggestion 1 goes at once, with no countdown (/auto instant).
-let waits = true
-let streak = 0
-let countdown = 0
-let ticker: Timer | null = null
-// Bumped whenever a countdown or a send in progress must be dropped.
-let generation = 0
-
-function stopCountdown($: EngineInterface): void {
-  generation += 1
-  ticker?.cancel()
-  ticker = null
-  if (countdown !== 0) {
-    countdown = 0
-    $.ui.invalidate('ui.render')
-  }
-}
-
-// Anything already in the prompt box means the person is typing: do not send.
-// If the box cannot be read, or anything cancelled us while reading, do not send.
-async function send($: EngineInterface, prompt: string): Promise<void> {
-  const mine = generation
-  const box = await $.prompt.read().catch(() => null)
-  if (mine !== generation) return
-  if (!auto || typeof box?.text !== 'string' || box.text !== '') return void show($, { kind: 'hidden' })
-  streak += 1
-  show($, { kind: 'hidden' })
-  void $.prompt.submit({ text: prompt, asUser: true }).catch(() => undefined)
-}
-
-function reset($: EngineInterface): void {
-  auto = false
-  waits = true
-  streak = 0
-  stopCountdown($)
-  show($, { kind: 'hidden' })
-}
-
-function startCountdown($: EngineInterface, prompt: string): void {
-  stopCountdown($)
-  if (!waits) return void send($, prompt)
-  countdown = AUTO_SECONDS
-  $.ui.invalidate('ui.render')
-  ticker = $.clock.every(1000, () => {
-    countdown -= 1
-    if (countdown > 0) return void $.ui.invalidate('ui.render')
-    stopCountdown($)
-    void send($, prompt)
-  })
-}
-
 export const register: Register = (on, options) => {
   const minTurnChars = typeof options?.minAnswerChars === 'number' ? options.minAnswerChars : 80
   const suggestsSkills = options?.suggestSkills !== false
 
-  // Auto mode never carries over: every session starts with it off.
-  on('session.start', async ($, e, next) => {
-    reset($)
-    await $.command.register({
-      name: 'auto',
-      description: 'Auto mode: send suggestion 1 by itself (on = 10s countdown, instant = no countdown, off)',
-      immediate: true,
-    })
-    return next(e)
-  })
-
-  on('command.run', { command: 'auto' }, async ($, e) => {
-    const arg = e.args.trim().toLowerCase()
-    auto = arg === 'on' || arg === 'instant' ? true : arg === 'off' ? false : !auto
-    waits = arg !== 'instant'
-    streak = 0
-    if (!auto) stopCountdown($)
-    $.ui.invalidate('ui.render')
-    const how = waits ? `after a ${AUTO_SECONDS}s countdown (press 0 to stop it)` : 'at once, no countdown'
-    return {
-      text: auto
-        ? `Auto mode on: suggestion 1 is sent ${how}, up to ${AUTO_CAP} turns in a row. /auto off to end.`
-        : 'Auto mode off.',
-    }
-  })
-
-  on('session.end', async ($, e, next) => {
-    reset($)
-    return next(e)
-  })
-
-  // Typing in the prompt box cancels the countdown.
-  on('prompt.edit', async ($, e, next) => {
-    stopCountdown($)
-    return next(e)
-  })
-
-  // A prompt the person sends themselves cancels the countdown and resets the run.
-  on('prompt.submit', async ($, e, next) => {
-    try {
-      if (e.origin.kind !== 'plugin') {
-        stopCountdown($)
-        streak = 0
-      }
-    } catch {
-      // never block the person's prompt
-    }
-    return next(e)
-  })
-
-  // A new turn (typed or otherwise) hides whatever was offered.
+  // A new turn hides whatever was offered.
   on('turn.start', async ($, e, next) => {
-    stopCountdown($)
     if (view.kind !== 'hidden') show($, { kind: 'hidden' })
     return next(e)
   })
@@ -288,10 +180,7 @@ export const register: Register = (on, options) => {
       // A newer turn started (or another completed) while we waited: drop ours.
       if (view.kind !== 'loading' || view.turnId !== turnId) return
       show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items })
-      if (items[0] === undefined) return
-      if (!auto) return void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)
-      if (streak < AUTO_CAP) return startCountdown($, items[0].prompt)
-      $.ui.toast(`auto paused after ${AUTO_CAP} turns in a row; send anything to resume`)
+      if (items[0] !== undefined) void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)
     })()
     return result
   })
@@ -316,12 +205,7 @@ export const register: Register = (on, options) => {
     // or progress band scroll out of view and the list is never seen.
     return (
       <Box flexDirection="column">
-        {/* One header row: the band's height is capped, and a taller tree scrolls the countdown out of view */}
-        {countdown > 0 ? (
-          <Text color="yellow">{`next (auto ${streak}/${AUTO_CAP}): sending 1 in ${countdown}s, press 0 to stop`}</Text>
-        ) : (
-          <Text dimColor>{auto ? `next (auto ${streak}/${AUTO_CAP}):` : 'next:'}</Text>
-        )}
+        <Text dimColor>next:</Text>
         {items.map((item, index) => (
           <Box key={`s${index}`} marginLeft={2}>
             <Button
@@ -329,7 +213,6 @@ export const register: Register = (on, options) => {
               plain
               label={item.label}
               onPress={() => {
-                stopCountdown($)
                 show($, { kind: 'hidden' })
                 void $.prompt.fill({ text: item.prompt }).then(
                   r => r.isFilled || $.ui.toast('could not fill the prompt box'),
@@ -340,10 +223,7 @@ export const register: Register = (on, options) => {
           </Box>
         ))}
         <Box marginLeft={2}>
-          <Button hotkey="0" plain label={countdown > 0 ? 'stop' : 'dismiss'} onPress={() => {
-            stopCountdown($)
-            show($, { kind: 'hidden' })
-          }} />
+          <Button hotkey="0" plain label="dismiss" onPress={() => show($, { kind: 'hidden' })} />
         </Box>
         {below}
       </Box>

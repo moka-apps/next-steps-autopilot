@@ -1,7 +1,7 @@
 {
   "name": "next-steps-autopilot",
-  "version": "0.3.0",
-  "description": "Shows suggested next prompts above the prompt box. Type /auto to let it send the first suggestion for you after a 10 second countdown. Off by default.",
+  "version": "0.4.0",
+  "description": "Shows suggested next prompts above the prompt box. Press 1, 2 or 3 to put one in the box; nothing is sent for you.",
   "author": { "name": "Varun Moka", "url": "https://github.com/varunmoka7" },
   "license": "MIT",
   "homepage": "https://github.com/varunmoka7/next-steps-autopilot",
