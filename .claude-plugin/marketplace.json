@@ -1,0 +1,17 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "next-steps-autopilot",
+  "description": "Suggested next prompts for Claude Code, with an optional autopilot that is off by default.",
+  "owner": { "name": "Varun Moka", "url": "https://github.com/varunmoka7" },
+  "plugins": [
+    {
+      "name": "next-steps-autopilot",
+      "description": "Shows suggested next prompts above the prompt box. Type /auto to let it send the first suggestion for you after a 10 second countdown. Off by default.",
+      "author": { "name": "Varun Moka", "url": "https://github.com/varunmoka7" },
+      "source": "./",
+      "homepage": "https://github.com/varunmoka7/next-steps-autopilot",
+      "category": "productivity",
+      "tags": ["suggestions", "next-steps", "autopilot", "function-hooks"]
+    }
+  ]
+}
