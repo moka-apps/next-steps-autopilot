@@ -1,7 +1,7 @@
 /* @jsxRuntime classic */
 /* @jsx h */
 /* @jsxFrag Fragment */
-// next-steps-autopilot (built on next-steps by hamzafer): when a turn ends, fork the session (shares the prompt cache, so
+// next-steps-autopilot (built on next-steps by Thariq Shihipar): when a turn ends, fork the session (shares the prompt cache, so
 // it has full context for the price of one short reply) and ask for up to
 // three likely next prompts. Draw them as 1/2/3 buttons in the band above the
 // composer; a press writes that prompt into the real composer as the person's
@@ -158,8 +158,11 @@ let waits = true
 let streak = 0
 let countdown = 0
 let ticker: Timer | null = null
+// Bumped whenever a countdown or a send in progress must be dropped.
+let generation = 0
 
 function stopCountdown($: EngineInterface): void {
+  generation += 1
   ticker?.cancel()
   ticker = null
   if (countdown !== 0) {
@@ -169,9 +172,12 @@ function stopCountdown($: EngineInterface): void {
 }
 
 // Anything already in the prompt box means the person is typing: do not send.
+// If the box cannot be read, or anything cancelled us while reading, do not send.
 async function send($: EngineInterface, prompt: string): Promise<void> {
+  const mine = generation
   const box = await $.prompt.read().catch(() => null)
-  if (!auto || (box !== null && box.text !== '')) return void show($, { kind: 'hidden' })
+  if (mine !== generation) return
+  if (!auto || typeof box?.text !== 'string' || box.text !== '') return void show($, { kind: 'hidden' })
   streak += 1
   show($, { kind: 'hidden' })
   void $.prompt.submit({ text: prompt, asUser: true }).catch(() => undefined)
@@ -216,8 +222,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'auto' }, async ($, e) => {
     const arg = e.args.trim().toLowerCase()
     auto = arg === 'on' || arg === 'instant' ? true : arg === 'off' ? false : !auto
-    if (arg === 'on') waits = true
-    if (arg === 'instant') waits = false
+    waits = arg !== 'instant'
     streak = 0
     if (!auto) stopCountdown($)
     $.ui.invalidate('ui.render')

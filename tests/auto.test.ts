@@ -10,13 +10,14 @@ const FORK = JSON.stringify([
 ])
 
 // Stands for the engine: the fork's answer, the clock, and what was submitted.
-const host = (on: On) => {
+const host = (on: On, read: () => unknown = () => ({ value: { text: '', cursor: 0 } })) => {
   const seen = { submitted: [] as string[], toasts: [] as string[] }
   const clock = mock.clock(on)
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('command.register', (_, e) => ({ value: { command: e.name } }) as never)
   on('command.list', () => ({ value: [] }))
   on('model.fork', () => ({ value: { isAnswered: true, text: FORK, usage: {} } }) as never)
+  on('prompt.read', () => read() as never)
   on('prompt.suggest', () => ({ isShown: true }) as never)
   on('turn.complete', () => ({ text: 'done' }))
   on('prompt.submit', (_, e) => {
@@ -129,11 +130,60 @@ test('typing in the prompt box cancels the countdown', async ($, on) => {
 })
 
 test('a draft already in the prompt box is never overwritten by a send', async ($, on) => {
-  const { seen, clock } = host(on)
-  on('prompt.read', () => ({ value: { text: 'half a thought', cursor: 14 } }) as never)
+  const { seen, clock } = host(on, () => ({ value: { text: 'half a thought', cursor: 14 } }))
   await $.session.start(START)
   await auto($, 'on')
   await $.turn.complete(TURN)
   await clock.advance(30_000)
   expect(seen.submitted).toEqual([])
+})
+
+test('a failed prompt-box read sends nothing', async ($, on) => {
+  const { seen, clock } = host(on, () => {
+    throw new Error('read failed')
+  })
+  await $.session.start(START)
+  await auto($, 'on')
+  await $.turn.complete(TURN)
+  await clock.advance(30_000)
+  expect(seen.submitted).toEqual([])
+})
+
+test('a prompt-box read with no valid text sends nothing', async ($, on) => {
+  const { seen, clock } = host(on, () => ({ value: null }))
+  await $.session.start(START)
+  await auto($, 'on')
+  await $.turn.complete(TURN)
+  await clock.advance(30_000)
+  expect(seen.submitted).toEqual([])
+})
+
+test('a send waiting on a slow prompt-box read is dropped when a new turn starts', async ($, on) => {
+  let release: () => void = () => undefined
+  const { seen, clock } = host(on, async () => {
+    await new Promise<void>(resolve => (release = resolve))
+    return { value: { text: '', cursor: 0 } }
+  })
+  on('turn.start', (_, e) => e as never)
+  await $.session.start(START)
+  await auto($, 'on')
+  await $.turn.complete(TURN)
+  await clock.advance(10_000)
+  await $.turn.start({ turnId: 't2' } as never)
+  release()
+  await clock.advance(1_000)
+  expect(seen.submitted).toEqual([])
+})
+
+test('bare /auto after instant then off uses the countdown again', async ($, on) => {
+  const { seen, clock } = host(on)
+  await $.session.start(START)
+  await auto($, 'instant')
+  await auto($, 'off')
+  expect((await auto($, '')).text).toContain('10s countdown')
+  await $.turn.complete(TURN)
+  await clock.advance(0)
+  expect(seen.submitted).toEqual([])
+  await clock.advance(10_000)
+  expect(seen.submitted).toEqual(['run the tests'])
 })
