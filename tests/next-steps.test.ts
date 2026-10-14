@@ -31,15 +31,22 @@ const host = (on: On, read: () => unknown = () => ({ value: { text: '', cursor: 
   return { seen, clock }
 }
 
-test('suggestions are drawn above the prompt and never sent', async ($, on) => {
+const BAND = { plugin: 'next-steps-autopilot', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as never
+
+test('a finished turn calls no model; only What next? does', async ($, on) => {
   const { seen, clock } = host(on)
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => $.ui.resolve(e).Box({}) as never)
   await $.session.start(START)
   await $.turn.complete(TURN)
   await clock.advance(30_000)
+  expect(seen.forks).toBe(0)
+  const band = await $.ui.mount(BAND)
+  expect(await band.find({ text: /What next\?/ })).toBeDefined()
+  await band.press({ key: 'What next?' })
+  await clock.advance(30_000)
+  expect(seen.forks).toBe(1)
   expect(seen.submitted).toEqual([])
   expect(seen.registered).toEqual([])
-  const band = await $.ui.mount({ plugin: 'next-steps-autopilot', surface: 'terminal', component: 'AbovePrompt', props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} } } as never)
   expect(await band.find({ text: /Run the tests/ })).toBeDefined()
   expect(await band.find({ text: /Commit/ })).toBeDefined()
 })

@@ -1,9 +1,10 @@
 /* @jsxRuntime classic */
 /* @jsx h */
 /* @jsxFrag Fragment */
-// next-steps-autopilot (built on next-steps by Thariq Shihipar): when a turn ends, fork the session (shares the prompt cache, so
-// it has full context for the price of one short reply) and ask for up to
-// three likely next prompts. Draw them as 1/2/3 buttons in the band above the
+// next-steps-autopilot (built on next-steps by Thariq Shihipar): when a turn
+// ends, offer a "What next?" button and nothing else. Only a press forks the
+// session (shares the prompt cache, so it has full context for the price of one
+// short reply) and asks for up to three likely next prompts. Draw them as 1/2/3 buttons in the band above the
 // composer; a press writes that prompt into the real composer as the person's
 // draft ($.prompt.fill) for them to edit and Enter; 0 dismisses. The top
 // suggestion is also offered as the composer's dim Tab-to-take ghost text
@@ -17,6 +18,7 @@ type Suggestion = { label: string; prompt: string }
 
 type View =
   | { kind: 'hidden' }
+  | { kind: 'ready'; turnId: string }
   | { kind: 'loading'; turnId: string }
   | { kind: 'offer'; items: Suggestion[] }
 
@@ -147,6 +149,31 @@ function show($: EngineInterface, nextView: View): void {
   $.ui.invalidate('ui.render')
 }
 
+// The press: ask the fork, detached, so the band never waits on it.
+function ask($: EngineInterface, turnId: string, suggestsSkills: boolean): void {
+  show($, { kind: 'loading', turnId })
+  void (async () => {
+    let items: Suggestion[] = []
+    try {
+      // Without the list the fork still suggests; slash prompts go unchecked.
+      const commands = await $.command.list().catch(() => null)
+      const known = commands === null ? null : new Set(commands.map(command => command.name))
+      const skills = suggestsSkills && commands !== null ? skillList(commands) : ''
+      const reply = await $.model.fork({ prompt: forkPrompt(skills) })
+      items = reply.isAnswered ? parseSuggestions(reply.text, known) : []
+      if (items.length === 0)
+        $.ui.log(reply.isAnswered ? `no suggestions in reply: ${clean(reply.text, 300)}` : `fork not answered: ${reply.reason}`)
+    } catch (error) {
+      $.ui.log(`fork failed: ${String(error)}`)
+    }
+    // A newer turn started while we waited: drop ours.
+    if (view.kind !== 'loading' || view.turnId !== turnId) return
+    if (items.length === 0) $.ui.toast('no next steps to suggest')
+    show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items })
+    if (items[0] !== undefined) void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)
+  })()
+}
+
 export const register: Register = (on, options) => {
   const minTurnChars = typeof options?.minAnswerChars === 'number' ? options.minAnswerChars : 80
   const suggestsSkills = options?.suggestSkills !== false
@@ -157,31 +184,11 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Turn over: ask the fork, detached, so the turn's completion never waits on it.
+  // Turn over: offer the button. No model call until it is pressed.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId !== undefined || e.reason !== 'answer' || e.answer.trim().length < minTurnChars) return result
-    const turnId = e.turnId
-    show($, { kind: 'loading', turnId })
-    void (async () => {
-      let items: Suggestion[] = []
-      try {
-        // Without the list the fork still suggests; slash prompts go unchecked.
-        const commands = await $.command.list().catch(() => null)
-        const known = commands === null ? null : new Set(commands.map(command => command.name))
-        const skills = suggestsSkills && commands !== null ? skillList(commands) : ''
-        const reply = await $.model.fork({ prompt: forkPrompt(skills) })
-        items = reply.isAnswered ? parseSuggestions(reply.text, known) : []
-        if (items.length === 0)
-          $.ui.log(reply.isAnswered ? `no suggestions in reply: ${clean(reply.text, 300)}` : `fork not answered: ${reply.reason}`)
-      } catch (error) {
-        $.ui.log(`fork failed: ${String(error)}`)
-      }
-      // A newer turn started (or another completed) while we waited: drop ours.
-      if (view.kind !== 'loading' || view.turnId !== turnId) return
-      show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items })
-      if (items[0] !== undefined) void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)
-    })()
+    show($, { kind: 'ready', turnId: e.turnId })
     return result
   })
 
@@ -189,6 +196,16 @@ export const register: Register = (on, options) => {
     const below = await next(e)
     if (e.props.hasSurvey || e.props.isWorking || view.kind === 'hidden') return below
     const { Box, Text, Button } = $.ui.resolve(e)
+
+    if (view.kind === 'ready') {
+      const turnId = view.turnId
+      return (
+        <Box flexDirection="column">
+          <Button hotkey="1" plain dimColor label="What next?" onPress={() => ask($, turnId, suggestsSkills)} />
+          {below}
+        </Box>
+      )
+    }
 
     if (view.kind === 'loading') {
       return (

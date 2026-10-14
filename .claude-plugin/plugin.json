@@ -1,7 +1,7 @@
 {
   "name": "next-steps-autopilot",
-  "version": "0.4.0",
-  "description": "Shows suggested next prompts above the prompt box. Press 1, 2 or 3 to put one in the box; nothing is sent for you.",
+  "version": "0.5.0",
+  "description": "A What next? button above the prompt box asks for suggested next prompts only when pressed. Press 1, 2 or 3 to put one in the box; nothing is sent for you.",
   "author": { "name": "Varun Moka", "url": "https://github.com/varunmoka7" },
   "license": "MIT",
   "homepage": "https://github.com/varunmoka7/next-steps-autopilot",
@@ -10,8 +10,8 @@
   "userConfig": {
     "minAnswerChars": {
       "type": "number",
-      "title": "Shortest answer to suggest after",
-      "description": "Skip suggestions after answers shorter than this many characters.",
+      "title": "Shortest answer to offer What next? after",
+      "description": "Skip the What next? button after answers shorter than this many characters.",
       "required": false,
       "default": 80
     },
