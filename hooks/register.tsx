@@ -25,6 +25,8 @@ type View =
 const MAX_SUGGESTIONS = 3
 const LABEL_MAX = 48
 const PROMPT_MAX = 600
+// $.model.fork takes no timeout or signal, so a timer gives up on it instead.
+const FORK_TIMEOUT_MS = 30_000
 const SKILL_NAME_MAX = 64
 const SKILL_DESCRIPTION_MAX = 120
 const SKILLS_DESCRIBED_BUDGET = 6000
@@ -152,6 +154,12 @@ function show($: EngineInterface, nextView: View): void {
 // The press: ask the fork, detached, so the band never waits on it.
 function ask($: EngineInterface, turnId: string, suggestsSkills: boolean): void {
   show($, { kind: 'loading', turnId })
+  // The fork keeps running; its late answer is dropped by the check below.
+  const timer = $.clock.after(FORK_TIMEOUT_MS, () => {
+    if (view.kind !== 'loading' || view.turnId !== turnId) return
+    $.ui.toast('next steps timed out')
+    show($, { kind: 'hidden' })
+  })
   void (async () => {
     let items: Suggestion[] = []
     try {
@@ -166,6 +174,7 @@ function ask($: EngineInterface, turnId: string, suggestsSkills: boolean): void 
     } catch (error) {
       $.ui.log(`fork failed: ${String(error)}`)
     }
+    timer.cancel()
     // A newer turn started while we waited: drop ours.
     if (view.kind !== 'loading' || view.turnId !== turnId) return
     if (items.length === 0) $.ui.toast('no next steps to suggest')

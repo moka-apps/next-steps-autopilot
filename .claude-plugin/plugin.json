@@ -1,6 +1,6 @@
 {
   "name": "next-steps-autopilot",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A What next? button above the prompt box asks for suggested next prompts only when pressed. Press 1, 2 or 3 to put one in the box; nothing is sent for you.",
   "author": { "name": "Varun Moka", "url": "https://github.com/varunmoka7" },
   "license": "MIT",
