@@ -1,10 +1,10 @@
 # next-steps-autopilot
 
-After most replies, a "What next?" button appears above the prompt box. Press it and Claude Code shows up to three prompts you might type next. It never sends anything for you: you pick one, check it and press Enter.
+After most replies, a "What next?" button appears above the prompt box. Press it and Claude Code shows up to three prompts you might type next. You pick one, check it and press Enter. Nothing is sent for you unless you turn on `/auto`.
 
 Version 0.5.0 stopped asking the model after every reply. The model is only asked when you press "What next?".
 
-Version 0.4.0 removed the old `/auto` mode, which sent the first suggestion by itself. In the author's own use it once merged code changes that nobody had approved.
+Version 0.6.0 brings back `/auto`, which 0.4.0 removed after it once merged code changes nobody had approved. It now holds any suggestion that mentions merge, push, delete, deploy, force, reset, drop, rm, publish or release, and the countdown length is yours to set.
 
 ## Why you might want it
 
@@ -28,11 +28,23 @@ Needs Claude Code 2.1.287 or newer (mods are on by default from that version). T
 - `0` dismisses the suggestions.
 - Tab takes the greyed-out first suggestion in the prompt box.
 
+## Auto mode
+
+Off at the start of every session.
+
+- `/auto` or `/auto on`: after each reply, suggestions are asked for at once and suggestion 1 is sent after the countdown (10 seconds unless you changed the "Auto mode countdown" option).
+- `/auto 5`: turn it on with a 5 second countdown for this session. Any whole number up to 999 works.
+- `/auto 0` or `/auto instant`: send at once, no countdown. The next plain `/auto` goes back to a countdown.
+- `/auto off`: stop.
+- Press `0` or start typing to stop a countdown. A prompt you send yourself resets the run.
+- It stops after 10 sends in a row until you send something yourself.
+- A suggestion that mentions merge, push, delete, deploy, force, reset, drop, rm, publish or release is never sent by itself; it stays on screen for you to press.
+
 ## What it touches
 
 - Network: none of its own. Suggestions use your normal Claude connection.
 - Files: none read or written. It keeps its state in memory only.
-- Extra AI requests: one short extra request each time you press "What next?", and none otherwise. The request goes to the same model your session is using and reuses the conversation Claude already has, so it costs about one short reply plus a cheap re-read of your conversation. On a long conversation, or after Claude has forgotten the saved copy of it (which happens after a few minutes), the re-read can cost more. To avoid it, don't press the button.
+- Extra AI requests: one short extra request each time you press "What next?", or after every reply while `/auto` is on, and none otherwise. The request goes to the same model your session is using and reuses the conversation Claude already has, so it costs about one short reply plus a cheap re-read of your conversation. On a long conversation, or after Claude has forgotten the saved copy of it (which happens after a few minutes), the re-read can cost more. To avoid it, don't press the button.
 - The request lists your skills and your commands that start with / so a suggestion can be one of them. You can switch that off with the "Suggest skills and slash commands" option.
 
 ## Turn it off / uninstall

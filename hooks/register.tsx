@@ -2,17 +2,17 @@
 /* @jsx h */
 /* @jsxFrag Fragment */
 // next-steps-autopilot (built on next-steps by Thariq Shihipar): when a turn
-// ends, offer a "What next?" button and nothing else. Only a press forks the
+// ends, offer a "What next?" button (in /auto mode, ask straight away). Asking forks the
 // session (shares the prompt cache, so it has full context for the price of one
 // short reply) and asks for up to three likely next prompts. Draw them as 1/2/3 buttons in the band above the
 // composer; a press writes that prompt into the real composer as the person's
 // draft ($.prompt.fill) for them to edit and Enter; 0 dismisses. The top
 // suggestion is also offered as the composer's dim Tab-to-take ghost text
-// ($.prompt.suggest). Nothing is ever sent for the person.
+// ($.prompt.suggest). Only /auto (off at every session start) sends anything.
 // The fork is also handed the session's skills and slash commands
 // ($.command.list), so a suggestion can be "/skill arguments".
 
-import type { CommandInfo, EngineInterface, Register, RenderElement } from 'claude-code'
+import type { CommandInfo, EngineInterface, Register, RenderElement, Timer } from 'claude-code'
 
 type Suggestion = { label: string; prompt: string }
 
@@ -151,7 +151,66 @@ function show($: EngineInterface, nextView: View): void {
   $.ui.invalidate('ui.render')
 }
 
-// The press: ask the fork, detached, so the band never waits on it.
+// Auto mode (/auto): after each turn the fork is asked at once, and a countdown
+// sends suggestion 1 as the person's prompt, at most AUTO_CAP turns in a row.
+// Pressing 0 or typing stops the countdown; a prompt the person sends themselves
+// resets the run. Off at every session start; a hot reload turns it off too.
+const AUTO_CAP = 10
+// A suggestion naming one of these is never sent by itself, only offered.
+const RISKY = /\b(merge|push|delete|deploy|force|reset|drop|rm|publish|release)\b/i
+let auto = false
+let autoSeconds = 10
+let streak = 0
+let countdown = 0
+let ticker: Timer | null = null
+// Bumped whenever a countdown or a send in progress must be dropped.
+let generation = 0
+
+function stopCountdown($: EngineInterface): void {
+  generation += 1
+  ticker?.cancel()
+  ticker = null
+  if (countdown !== 0) {
+    countdown = 0
+    $.ui.invalidate('ui.render')
+  }
+}
+
+// Anything already in the prompt box means the person is typing: do not send.
+// If the box cannot be read, or anything cancelled us while reading, do not send.
+async function send($: EngineInterface, prompt: string): Promise<void> {
+  const mine = generation
+  const box = await $.prompt.read().catch(() => null)
+  if (mine !== generation) return
+  if (!auto || typeof box?.text !== 'string' || box.text !== '') return
+  streak += 1
+  show($, { kind: 'hidden' })
+  void $.prompt.submit({ text: prompt, asUser: true }).catch(() => undefined)
+}
+
+function startCountdown($: EngineInterface, prompt: string): void {
+  stopCountdown($)
+  if (autoSeconds === 0) return void send($, prompt)
+  countdown = autoSeconds
+  $.ui.invalidate('ui.render')
+  ticker = $.clock.every(1000, () => {
+    countdown -= 1
+    if (countdown > 0) return void $.ui.invalidate('ui.render')
+    stopCountdown($)
+    void send($, prompt)
+  })
+}
+
+// After the offer is up: in auto mode, count down to sending suggestion 1.
+function autoSend($: EngineInterface, first: Suggestion): void {
+  if (!auto) return
+  const risky = RISKY.exec(first.prompt)
+  if (risky) return void $.ui.toast(`auto held: suggestion 1 says "${risky[0]}", press 1 to use it`)
+  if (streak >= AUTO_CAP) return void $.ui.toast(`auto paused after ${AUTO_CAP} turns in a row; send anything to resume`)
+  startCountdown($, first.prompt)
+}
+
+// Ask the fork, detached, so the band never waits on it.
 function ask($: EngineInterface, turnId: string, suggestsSkills: boolean): void {
   show($, { kind: 'loading', turnId })
   // The fork keeps running; its late answer is dropped by the check below.
@@ -179,25 +238,100 @@ function ask($: EngineInterface, turnId: string, suggestsSkills: boolean): void 
     if (view.kind !== 'loading' || view.turnId !== turnId) return
     if (items.length === 0) $.ui.toast('no next steps to suggest')
     show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items })
-    if (items[0] !== undefined) void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)
+    if (items[0] === undefined) return
+    if (auto) return autoSend($, items[0])
+    void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)
   })()
+}
+
+// "/auto", "/auto on|off|instant", or "/auto <seconds>" (0 = no countdown).
+function parseAuto(arg: string, defaultSeconds: number): { on: boolean; seconds: number } | null {
+  // A number sticks for the session; instant does not, so on again means a countdown.
+  const kept = autoSeconds === 0 ? defaultSeconds : autoSeconds
+  if (arg === '') return { on: !auto, seconds: kept }
+  if (arg === 'on') return { on: true, seconds: kept }
+  if (arg === 'off') return { on: false, seconds: autoSeconds }
+  if (arg === 'instant') return { on: true, seconds: 0 }
+  if (/^\d{1,3}$/.test(arg)) return { on: true, seconds: Number(arg) }
+  return arg === 'default' ? { on: true, seconds: defaultSeconds } : null
 }
 
 export const register: Register = (on, options) => {
   const minTurnChars = typeof options?.minAnswerChars === 'number' ? options.minAnswerChars : 80
   const suggestsSkills = options?.suggestSkills !== false
+  const defaultSeconds =
+    typeof options?.autoSeconds === 'number' && options.autoSeconds >= 0 ? Math.min(Math.floor(options.autoSeconds), 999) : 10
+
+  // Auto mode never carries over: every session starts with it off.
+  on('session.start', async ($, e, next) => {
+    auto = false
+    autoSeconds = defaultSeconds
+    streak = 0
+    stopCountdown($)
+    await $.command.register({
+      name: 'auto',
+      description: 'Send suggestion 1 by itself: /auto [on|off|instant|<seconds>]',
+      immediate: true,
+    })
+    return next(e)
+  })
+
+  on('command.run', { command: 'auto' }, async ($, e) => {
+    const parsed = parseAuto(e.args.trim().toLowerCase(), defaultSeconds)
+    if (parsed === null) return { text: 'Usage: /auto [on|off|instant|<seconds>], for example /auto 5' }
+    auto = parsed.on
+    autoSeconds = parsed.seconds
+    streak = 0
+    if (!auto) stopCountdown($)
+    $.ui.invalidate('ui.render')
+    const how = autoSeconds === 0 ? 'at once, no countdown' : `after a ${autoSeconds}s countdown (press 0 to stop it)`
+    return {
+      text: auto
+        ? `Auto mode on: suggestion 1 is sent ${how}, up to ${AUTO_CAP} turns in a row. Suggestions that mention merge, push, delete, deploy and the like wait for you. /auto off to end.`
+        : 'Auto mode off.',
+    }
+  })
+
+  on('session.end', async ($, e, next) => {
+    auto = false
+    streak = 0
+    stopCountdown($)
+    show($, { kind: 'hidden' })
+    return next(e)
+  })
+
+  // Typing in the prompt box cancels the countdown.
+  on('prompt.edit', async ($, e, next) => {
+    stopCountdown($)
+    return next(e)
+  })
+
+  // A prompt the person sends themselves cancels the countdown and resets the run.
+  on('prompt.submit', async ($, e, next) => {
+    try {
+      if (e.origin.kind !== 'plugin') {
+        stopCountdown($)
+        streak = 0
+      }
+    } catch {
+      // never block the person's prompt
+    }
+    return next(e)
+  })
 
   // A new turn hides whatever was offered.
   on('turn.start', async ($, e, next) => {
+    stopCountdown($)
     if (view.kind !== 'hidden') show($, { kind: 'hidden' })
     return next(e)
   })
 
-  // Turn over: offer the button. No model call until it is pressed.
+  // Turn over: offer the button, or in auto mode ask the fork straight away.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId !== undefined || e.reason !== 'answer' || e.answer.trim().length < minTurnChars) return result
-    show($, { kind: 'ready', turnId: e.turnId })
+    if (auto) ask($, e.turnId, suggestsSkills)
+    else show($, { kind: 'ready', turnId: e.turnId })
     return result
   })
 
@@ -231,7 +365,12 @@ export const register: Register = (on, options) => {
     // or progress band scroll out of view and the list is never seen.
     return (
       <Box flexDirection="column">
-        <Text dimColor>next:</Text>
+        {/* One header row: the band's height is capped, and a taller tree scrolls the countdown out of view */}
+        {countdown > 0 ? (
+          <Text color="yellow">{`next (auto ${streak}/${AUTO_CAP}): sending 1 in ${countdown}s, press 0 to stop`}</Text>
+        ) : (
+          <Text dimColor>{auto ? `next (auto ${streak}/${AUTO_CAP}):` : 'next:'}</Text>
+        )}
         {items.map((item, index) => (
           <Box key={`s${index}`} marginLeft={2}>
             <Button
@@ -239,6 +378,7 @@ export const register: Register = (on, options) => {
               plain
               label={item.label}
               onPress={() => {
+                stopCountdown($)
                 show($, { kind: 'hidden' })
                 void $.prompt.fill({ text: item.prompt }).then(
                   r => r.isFilled || $.ui.toast('could not fill the prompt box'),
@@ -249,7 +389,10 @@ export const register: Register = (on, options) => {
           </Box>
         ))}
         <Box marginLeft={2}>
-          <Button hotkey="0" plain label="dismiss" onPress={() => show($, { kind: 'hidden' })} />
+          <Button hotkey="0" plain label={countdown > 0 ? 'stop' : 'dismiss'} onPress={() => {
+            stopCountdown($)
+            show($, { kind: 'hidden' })
+          }} />
         </Box>
         {below}
       </Box>

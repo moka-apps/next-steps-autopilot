@@ -1,12 +1,23 @@
 {
   "name": "next-steps-autopilot",
-  "version": "0.5.1",
-  "description": "A What next? button above the prompt box asks for suggested next prompts only when pressed. Press 1, 2 or 3 to put one in the box; nothing is sent for you.",
-  "author": { "name": "Varun Moka", "url": "https://github.com/varunmoka7" },
+  "version": "0.6.0",
+  "description": "A What next? button above the prompt box asks for suggested next prompts only when pressed. Type /auto to have suggestion 1 sent after a countdown you set; off by default.",
+  "author": {
+    "name": "Varun Moka",
+    "url": "https://github.com/varunmoka7"
+  },
   "license": "MIT",
   "homepage": "https://github.com/varunmoka7/next-steps-autopilot",
   "repository": "https://github.com/varunmoka7/next-steps-autopilot",
-  "keywords": ["claude-code", "claude-code-mod", "claude-code-plugin", "function-hooks", "suggestions", "next-steps", "autopilot"],
+  "keywords": [
+    "claude-code",
+    "claude-code-mod",
+    "claude-code-plugin",
+    "function-hooks",
+    "suggestions",
+    "next-steps",
+    "autopilot"
+  ],
   "userConfig": {
     "minAnswerChars": {
       "type": "number",
@@ -21,6 +32,13 @@
       "description": "Tell the suggester which skills and slash commands this session has, so a suggestion can be one of them.",
       "required": false,
       "default": true
+    },
+    "autoSeconds": {
+      "type": "number",
+      "title": "Auto mode countdown (seconds)",
+      "description": "How long /auto waits before sending suggestion 1. 0 sends at once. /auto <seconds> changes it for one session.",
+      "required": false,
+      "default": 10
     }
   }
 }

@@ -46,7 +46,7 @@ test('a finished turn calls no model; only What next? does', async ($, on) => {
   await clock.advance(30_000)
   expect(seen.forks).toBe(1)
   expect(seen.submitted).toEqual([])
-  expect(seen.registered).toEqual([])
+  expect(seen.registered).toEqual(['auto'])
   expect(await band.find({ text: /Run the tests/ })).toBeDefined()
   expect(await band.find({ text: /Commit/ })).toBeDefined()
 })
