@@ -1,4 +1,13 @@
-# next-steps-autopilot
+<p align="center">
+  <img src="assets/banner.svg" alt="next-steps-autopilot: Suggested next prompts above the prompt box." width="100%">
+</p>
+
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/moka-apps/next-steps-autopilot?style=flat-square&color=111111" alt="License"></a>
+  <a href="https://github.com/moka-apps"><img src="https://img.shields.io/badge/moka--apps-Claude_Code_mod-bc8cff?style=flat-square" alt="moka-apps, Claude Code mod"></a>
+</p>
+
+---
 
 After most replies, a "What next?" button appears above the prompt box. Press it and Claude Code shows up to three prompts you might type next. You pick one, check it and press Enter. Nothing is sent for you unless you turn on `/auto`.
 
@@ -15,7 +24,7 @@ You ask Claude to fix a bug. When it finishes, press `1` for "What next?" and th
 Type these two lines in a terminal (the app where you start Claude Code), not inside Claude Code:
 
 ```
-claude plugin marketplace add varunmoka7/next-steps-autopilot
+claude plugin marketplace add moka-apps/next-steps-autopilot
 claude plugin install next-steps-autopilot@next-steps-autopilot
 ```
 
